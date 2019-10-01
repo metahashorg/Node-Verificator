@@ -1,1 +1,1 @@
-# Node-Verificator
+# Node-Verificator project
