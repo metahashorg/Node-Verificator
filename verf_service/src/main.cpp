@@ -9,6 +9,7 @@
 #include <mhcurl.hpp>
 #include <open_ssl_decor.h>
 #include <statics.hpp>
+#include <transaction.h>
 
 #include "middleserver.h"
 
@@ -82,13 +83,14 @@ void SIGPIPE_handler(int /*s*/)
     DEBUG_COUT("Caught SIGPIPE");
 }
 
-[[noreturn]] void SIGSEGV_handler(int /*s*/) {
+[[noreturn]] void SIGSEGV_handler(int /*s*/)
+{
     DEBUG_COUT("Caught SIGSEGV");
     std::this_thread::sleep_for(std::chrono::seconds(2));
     exit(1);
 }
 
-    [[noreturn]] void SIGTERM_handler(int /*s*/)
+[[noreturn]] void SIGTERM_handler(int /*s*/)
 {
     DEBUG_COUT("Caught SIGTERM");
     std::this_thread::sleep_for(std::chrono::seconds(2));
@@ -115,7 +117,7 @@ int main(int argc, char** argv)
         if (!config_json.Parse(content.c_str()).HasParseError()) {
 
             if (config_json.HasMember("network") && config_json["network"].IsString()
-                // && config_json.HasMember("key") && config_json["key"].IsString()
+                && config_json.HasMember("key") && config_json["key"].IsString()
                 && config_json.HasMember("port") && config_json["port"].IsUint()
                 && config_json.HasMember("cores") && config_json["cores"].IsArray()) {
 
@@ -128,10 +130,10 @@ int main(int argc, char** argv)
 
                 network = config_json["network"].GetString();
 
-                // if (!key_holder.parse(std::string(config_json["key"].GetString()))) {
-                //     std::cerr << "Error while parsing Private key" << std::endl;
-                //     exit(1);
-                // }
+                if (!key_holder.parse(std::string(config_json["key"].GetString()))) {
+                    std::cerr << "Error while parsing Private key" << std::endl;
+                    exit(1);
+                }
 
                 std::map<std::string, std::pair<std::string, int>> cores;
                 auto& v_list = config_json["cores"];
@@ -273,7 +275,58 @@ int main(int argc, char** argv)
         }
     });
 
-    MIDDLE_SERVER MS(listen_port, send_message_map, pool_size, counter_);
+    MIDDLE_SERVER MS(listen_port, [&counter_, &send_message_map, &key_holder](const std::string& req_post, const std::string& req_url) {
+        counter_++;
+
+        // if (send_message_queue.begin()->second.size_approx() > pool_size) {
+        //     mhd_resp.data = "Queue full<BR/>";
+        //     return true;
+        // }
+
+        std::string path = req_url;
+        path.erase(std::remove(path.begin(), path.end(), '/'), path.end());
+
+        if (path == "getinfo") {
+            static const std::string version = std::string(VESION_MAJOR) + "." + std::string(VESION_MINOR) + "." + std::string(GIT_COMMIT_HASH);
+            rapidjson::StringBuffer s;
+            rapidjson::Writer<rapidjson::StringBuffer> writer(s);
+            writer.StartObject();
+            {
+                writer.String("result");
+                writer.StartObject();
+                {
+                    writer.String("version");
+                    writer.String(version.c_str());
+                    writer.String("mh_addr");
+                    writer.String(key_holder.Text_addres.c_str());
+                }
+                writer.EndObject();
+            }
+            writer.EndObject();
+            return std::string(s.GetString());
+        } else {
+            TX* p_tx = new TX;
+            if (!p_tx->parse(req_post)) {
+                DEBUG_COUT("Transaction corrupted");
+
+                if (!req_post.empty()) {
+                    DEBUG_COUT(bin2hex(req_post));
+                }
+
+                delete p_tx;
+                return std::string("Transaction corrupted.<BR/>");
+            }
+
+            delete p_tx;
+
+            for (auto& network_queue : send_message_map) {
+                auto* p_string_post = new std::string(req_post);
+                network_queue.second.enqueue(p_string_post);
+            }
+            return std::string("Transaction accepted.<BR/>");
+        }
+    });
+
     MS.start();
 
     return 0;

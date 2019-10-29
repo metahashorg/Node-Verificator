@@ -18,19 +18,17 @@ struct KeyManager {
 
 class MIDDLE_SERVER : public mh::mhd::MHD {
 private:
-    std::map<std::string, moodycamel::ConcurrentQueue<std::string*>>& send_message_queue;
-    uint64_t pool_size;
-    std::atomic<int64_t>& counter;
+    std::function<std::string(const std::string&, const std::string&)> processor;
 
 public:
-    MIDDLE_SERVER(int _port, std::map<std::string, moodycamel::ConcurrentQueue<std::string*>>& _send_message_queue, uint64_t _pool_size, std::atomic<int64_t>& _counter);
+    MIDDLE_SERVER(int _port, std::function<std::string(const std::string&, const std::string&)>  func);
 
-    virtual ~MIDDLE_SERVER();
+    ~MIDDLE_SERVER() override;
 
-    virtual bool run(int thread_number, Request& mhd_req, Response& mhd_resp);
+    bool run(int thread_number, Request& mhd_req, Response& mhd_resp) override;
 
 protected:
-    virtual bool init();
+    bool init() override;
 };
 
 #endif // MIDDLESERVER_H
