@@ -27,53 +27,32 @@ void sender_func(std::map<std::string, moodycamel::ConcurrentQueue<std::string*>
     moodycamel::ConcurrentQueue<std::string*>& send_message = send_message_map[network];
     uint64_t i = 0;
 
-    while (true) {
-        if (network == "net-main") {
-            std::string* req_post;
-            if (send_message.try_dequeue(req_post)) {
-                std::string req = *req_post;
-                delete req_post;
-                std::string path = "/";
-                std::string response;
-                while (true) {
-                    if (CF.post(path, req, response)) {
-                        break;
-                    }
-                    if (i % 1000 == 0) {
-                        DEBUG_COUT("Curl request not sent");
-                    }
-                    i++;
-                    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    bool do_it_forever = true;
+    while (do_it_forever) {
+        if (uint got_msg = send_message.try_dequeue_bulk(p_req_post, 1024)) {
+            std::string req;
+
+            for (uint i = 0; i < got_msg; i++) {
+                append_varint(req, p_req_post[i]->size());
+                req.insert(req.end(), p_req_post[i]->begin(), p_req_post[i]->end());
+                delete p_req_post[i];
+            }
+            append_varint(req, 0);
+
+            std::string path = "/" + RPC_TX + "/";
+            std::string response;
+            while (true) {
+                if (CF.post(path, req, response)) {
+                    break;
                 }
-            } else {
+                if (i % 1000 == 0) {
+                    DEBUG_COUT("Curl request not sent");
+                }
+                i++;
                 std::this_thread::sleep_for(std::chrono::milliseconds(10));
             }
         } else {
-            if (uint got_msg = send_message.try_dequeue_bulk(p_req_post, 1024)) {
-                std::string req;
-
-                for (uint i = 0; i < got_msg; i++) {
-                    append_varint(req, p_req_post[i]->size());
-                    req.insert(req.end(), p_req_post[i]->begin(), p_req_post[i]->end());
-                    delete p_req_post[i];
-                }
-                append_varint(req, 0);
-
-                std::string path = "/" + RPC_TX + "/";
-                std::string response;
-                while (true) {
-                    if (CF.post(path, req, response)) {
-                        break;
-                    }
-                    if (i % 1000 == 0) {
-                        DEBUG_COUT("Curl request not sent");
-                    }
-                    i++;
-                    std::this_thread::sleep_for(std::chrono::milliseconds(10));
-                }
-            } else {
-                std::this_thread::sleep_for(std::chrono::milliseconds(10));
-            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
         }
     }
 }
@@ -104,7 +83,6 @@ int main(int argc, char** argv)
     DEBUG_COUT("Version:\t" + std::string(VESION_MAJOR) + "." + std::string(VESION_MINOR) + "." + std::string(GIT_COMMIT_HASH));
 
     int listen_port = 0;
-    int pool_size = 0;
     std::string network;
     KeyManager key_holder;
     std::vector<std::thread> sender;
