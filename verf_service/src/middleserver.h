@@ -14,6 +14,8 @@ struct KeyManager {
     bool parse(const std::string& line);
 
     std::string make_req_url(std::string& data);
+
+    std::pair<std::string, std::string> sign_string(const std::string& data);
 };
 
 class MIDDLE_SERVER : public mh::mhd::MHD {
@@ -21,7 +23,7 @@ private:
     std::function<std::string(const std::string&, const std::string&)> processor;
 
 public:
-    MIDDLE_SERVER(int _port, std::function<std::string(const std::string&, const std::string&)>  func);
+    MIDDLE_SERVER(int _port, std::function<std::string(const std::string&, const std::string&)> func);
 
     ~MIDDLE_SERVER() override;
 

@@ -20,7 +20,7 @@
 #include <help_lib.hpp>
 #include <version.h>
 
-void sender_func(std::map<std::string, moodycamel::ConcurrentQueue<std::string*>>& send_message_map, std::string network, std::string host, int port)
+void sender_func(std::map<std::string, moodycamel::ConcurrentQueue<std::string*>>& send_message_map, KeyManager& key_holder, std::string network, std::string host, int port)
 {
     CurlFetch CF(host, port);
     std::string* p_req_post[1024];
@@ -39,10 +39,12 @@ void sender_func(std::map<std::string, moodycamel::ConcurrentQueue<std::string*>
             }
             append_varint(req, 0);
 
+            auto&& [sign, pubk] = key_holder.sign_string(req);
+
             std::string path = "/" + RPC_TX + "/";
             std::string response;
             while (true) {
-                if (CF.post(path, req, response)) {
+                if (CF.post_singned(path, req, sign, pubk, response)) {
                     break;
                 }
                 if (i % 1000 == 0) {
@@ -141,7 +143,7 @@ int main(int argc, char** argv)
                         i_max = 4;
                     }
                     for (uint i = 0; i < i_max; i++) {
-                        sender.emplace_back(sender_func, std::ref(send_message_map), core.first, core.second.first, core.second.second);
+                        sender.emplace_back(sender_func, std::ref(send_message_map), std::ref(key_holder), core.first, core.second.first, core.second.second);
                     }
                 }
 

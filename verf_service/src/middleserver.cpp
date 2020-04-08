@@ -5,7 +5,7 @@
 #include <statics.hpp>
 #include <utility>
 
-MIDDLE_SERVER::MIDDLE_SERVER(int _port, std::function<std::string(const std::string&, const std::string&)>  func)
+MIDDLE_SERVER::MIDDLE_SERVER(int _port, std::function<std::string(const std::string&, const std::string&)> func)
     : processor(std::move(func))
 {
     set_port(_port);
@@ -56,4 +56,11 @@ std::string KeyManager::make_req_url(std::string& data)
     sign_data(data, sign, PrivKey);
 
     return "/?pubk=" + Text_PubKey + "&sign=" + bin2hex(sign);
+}
+
+std::pair<std::string, std::string> KeyManager::sign_string(const std::string& data)
+{
+    std::vector<char> bin_sign;
+    sign_data(data, bin_sign, PrivKey);
+    return { "0x" + bin2hex(bin_sign), Text_PubKey };
 }

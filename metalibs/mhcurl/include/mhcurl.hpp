@@ -20,6 +20,13 @@ public:
     }
 
     bool post(const std::string& url, const std::string& reques_string, std::string& response);
+
+    bool post_singned(
+        const std::string& url,
+        const std::string& reques_string,
+        const std::string& sign,
+        const std::string& bubk,
+        std::string& response);
 };
 
 #endif // MHCURL_HPP
