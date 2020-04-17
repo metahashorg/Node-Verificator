@@ -283,6 +283,7 @@ int main(int argc, char** argv)
                 writer.EndObject();
             }
             writer.EndObject();
+            DEBUG_COUT("Version");
             return std::string(s.GetString());
         } else {
             TX* p_tx = new TX;
@@ -303,6 +304,7 @@ int main(int argc, char** argv)
                 auto* p_string_post = new std::string(req_post);
                 network_queue.second.enqueue(p_string_post);
             }
+            DEBUG_COUT("Transaction accepted");
             return std::string("Transaction accepted.<BR/>");
         }
     });
