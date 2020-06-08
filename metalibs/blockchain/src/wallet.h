@@ -10,6 +10,8 @@
 #include <transaction.h>
 #include <xxhash.h>
 
+namespace metahash::metachain {
+
 class Wallet;
 
 class WalletMap {
@@ -40,20 +42,6 @@ private:
     Wallet* wallet_factory(const std::string&);
 };
 
-struct WalletAdditions {
-    uint64_t delegated_from_sum = 0; // сумма средств делегированных этому кошельку
-    uint64_t delegated_to_sum = 0; // сумма средств делегированных этим кошельком
-
-    uint64_t state = 0;
-    uint64_t trust = 2;
-
-    std::deque<std::pair<std::string, uint64_t>> delegated_from; // монеты делегированные с других кошельков
-    std::deque<std::pair<std::string, uint64_t>> delegate_to; // монеты делегированные другим кошелькам
-
-    std::deque<std::pair<std::string, uint64_t>> delegated_from_daly_snapshot; // монеты делегированные с других кошельков
-    std::deque<std::pair<std::string, uint64_t>> delegate_to_daly_snapshot; // монеты делегированные другим кошелькам
-};
-
 class Wallet {
 protected:
     std::unordered_set<Wallet*>& changed_wallets;
@@ -65,7 +53,7 @@ protected:
     uint64_t real_balance = 0;
 
 public:
-    Wallet(std::unordered_set<Wallet*>&);
+    explicit Wallet(std::unordered_set<Wallet*>&);
     Wallet(const Wallet&) = delete;
     Wallet(Wallet&&) = delete;
     Wallet& operator=(const Wallet& other) = delete;
@@ -79,9 +67,9 @@ public:
     virtual bool initialize(uint64_t, uint64_t, const std::string&);
 
     virtual void add(uint64_t value);
-    virtual bool sub(Wallet* other, TX const* tx, uint64_t real_fee);
+    virtual uint64_t sub(Wallet* other, TX const* tx, uint64_t real_fee);
 
-    virtual bool try_apply_method(Wallet* other, TX const* tx);
+    virtual bool try_apply_method(Wallet* other, TX const* tx) = 0;
 
     virtual void apply();
     virtual void clear();
@@ -89,6 +77,24 @@ public:
 
 class CommonWallet : public Wallet {
 private:
+    struct WalletAdditions {
+        bool founder = false;
+        uint64_t used_limit = 0;
+        uint64_t limit = 0;
+
+        uint64_t delegated_from_sum = 0; // сумма средств делегированных этому кошельку
+        uint64_t delegated_to_sum = 0; // сумма средств делегированных этим кошельком
+
+        uint64_t state = 0;
+        uint64_t trust = 2;
+
+        std::deque<std::pair<std::string, uint64_t>> delegated_from; // монеты делегированные с других кошельков
+        std::deque<std::pair<std::string, uint64_t>> delegate_to; // монеты делегированные другим кошелькам
+
+        std::deque<std::pair<std::string, uint64_t>> delegated_from_daly_snapshot; // монеты делегированные с других кошельков
+        std::deque<std::pair<std::string, uint64_t>> delegate_to_daly_snapshot; // монеты делегированные другим кошелькам
+    };
+
     WalletAdditions* addition = nullptr;
     WalletAdditions* real_addition = nullptr;
 
@@ -100,7 +106,7 @@ private:
     uint64_t get_balance();
 
 public:
-    CommonWallet(std::unordered_set<Wallet*>&);
+    explicit CommonWallet(std::unordered_set<Wallet*>&);
     CommonWallet(const CommonWallet&) = delete;
     CommonWallet(CommonWallet&&) = delete;
     CommonWallet& operator=(const CommonWallet& other) = delete;
@@ -118,6 +124,8 @@ public:
     void add_trust();
     void sub_trust();
 
+    void set_founder_limit();
+
     std::deque<std::pair<std::string, uint64_t>> get_delegate_to_list();
     std::deque<std::pair<std::string, uint64_t>> get_delegated_from_list();
 
@@ -126,7 +134,7 @@ public:
     std::tuple<uint64_t, uint64_t, std::string> serialize() override;
     bool initialize(uint64_t, uint64_t, const std::string& json) override;
 
-    bool sub(Wallet* other, TX const* tx, uint64_t real_fee) override;
+    uint64_t sub(Wallet* other, TX const* tx, uint64_t real_fee) override;
 
     bool try_apply_method(Wallet* other, TX const* tx) override;
 
@@ -145,7 +153,7 @@ private:
     std::map<std::string, uint64_t> real_host;
 
 public:
-    DecentralizedApplication(std::unordered_set<Wallet*>&);
+    explicit DecentralizedApplication(std::unordered_set<Wallet*>&);
     DecentralizedApplication(const DecentralizedApplication&) = delete;
     DecentralizedApplication(DecentralizedApplication&&) = delete;
     DecentralizedApplication& operator=(const DecentralizedApplication& other) = delete;
@@ -157,6 +165,8 @@ public:
     std::tuple<uint64_t, uint64_t, std::string> serialize() override;
     bool initialize(uint64_t, uint64_t, const std::string&) override;
 
+    bool try_apply_method(Wallet* other, TX const* tx) override;
+
     bool try_dapp_create(TX const* tx);
     bool try_dapp_modify(TX const* tx);
     bool try_dapp_add_host(TX const* tx);
@@ -167,5 +177,7 @@ public:
     void apply() override;
     void clear() override;
 };
+
+}
 
 #endif // WALLET_H
