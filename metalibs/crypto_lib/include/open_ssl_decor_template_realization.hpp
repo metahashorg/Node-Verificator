@@ -17,8 +17,9 @@
 #include <openssl/sha.h>
 #include <openssl/x509v3.h>
 
-// XXHASH
 #include <xxhash.h>
+
+namespace metahash::crypto {
 
 const uint8_t BYTED_2 = 0xfa;
 const uint8_t BYTED_4 = 0xfb;
@@ -28,6 +29,26 @@ const uint8_t BYTED_32 = 0xfe;
 const uint8_t BYTED_64 = 0xff;
 
 using sha256_2 = std::array<unsigned char, 32>;
+
+template <typename Container>
+uint64_t Hasher::operator()(const Container& data) const
+{
+    return XXH64(data.data(), data.size(), 0);
+}
+
+template <typename Container>
+Signer::Signer(const Container& private_file)
+{
+    init(std::string_view(reinterpret_cast<const char*>(private_file.data()), private_file.size()));
+}
+
+template <typename Container>
+std::vector<char> Signer::sign(const Container& data)
+{
+    std::vector<char> bin_sign;
+    sign_data(data, bin_sign, private_key);
+    return bin_sign;
+}
 
 template <typename Container>
 std::string bin2hex(const Container& bin_msg)
@@ -257,12 +278,12 @@ std::array<char, 25> get_address(const PubKContainer& bpubk)
         data[datasize - 65] = 0x04;
 
         sha256_2 sha_1;
-        std::array<unsigned char, RIPEMD160_DIGEST_LENGTH> r160{};
+        std::array<unsigned char, RIPEMD160_DIGEST_LENGTH> r160 {};
 
         SHA256(data + (datasize - 65), 65, sha_1.data());
         RIPEMD160(sha_1.data(), SHA256_DIGEST_LENGTH, r160.data());
 
-        std::array<unsigned char, RIPEMD160_DIGEST_LENGTH + 1> wide_h{};
+        std::array<unsigned char, RIPEMD160_DIGEST_LENGTH + 1> wide_h {};
         wide_h[0] = 0;
         for (size_t i = 0; i < RIPEMD160_DIGEST_LENGTH; i++) {
             wide_h[i + 1] = r160[i];
@@ -274,7 +295,7 @@ std::array<char, 25> get_address(const PubKContainer& bpubk)
         sha256_2 hash2;
         SHA256(hash1.data(), SHA256_DIGEST_LENGTH, hash2.data());
 
-        std::array<char, 25> address{};
+        std::array<char, 25> address {};
         uint j = 0;
         {
             for (uint i = 0; i < wide_h.size(); i++, j++) {
@@ -289,7 +310,7 @@ std::array<char, 25> get_address(const PubKContainer& bpubk)
         return address;
     }
 
-    return std::array<char, 25>{ 0 };
+    return std::array<char, 25> { 0 };
 }
 
 template <typename PubKContainer, typename PrivKContainer>
@@ -354,6 +375,8 @@ bool sign_data(const DataContainer& data, SignContainer& sign, const PrivKContai
     EVP_MD_CTX_destroy(mdctx);
 
     return true;
+}
+
 }
 
 #endif // OPEN_SSL_DECOR_TEMPLATE_REALIZATION_HPP

@@ -2,6 +2,8 @@
 
 #include "keccak.h"
 
+namespace metahash::crypto {
+
 std::vector<unsigned char> int_as_varint_array(uint64_t value)
 {
     auto* p_int = reinterpret_cast<unsigned char*>(&value);
@@ -22,7 +24,7 @@ std::vector<unsigned char> int_as_varint_array(uint64_t value)
     return ret_data;
 }
 
-std::vector<unsigned char> hex2bin(const std::string& src)
+std::vector<unsigned char> hex2bin(const std::string_view src)
 {
     static const std::array<unsigned char, 256> DecLookup = {
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // gap before first hex digit
@@ -88,7 +90,7 @@ std::vector<unsigned char> EncodeField(const std::vector<unsigned char>& field)
     std::vector<unsigned char> rslt;
 
     uint64_t fs = field.size();
-    if (fs == 1 && field.at(0) >= 0 && (uint8_t)field.at(0) <= 0x7F) {
+    if (fs == 1 && (uint8_t)field.at(0) <= 0x7F) {
         if (field.at(0) == 0) {
             rslt.push_back(0x80);
         } else {
@@ -153,4 +155,34 @@ std::string get_contract_address(const std::string& addr, uint64_t nonce)
     sha256_2 sha2_hash = get_sha256(address);
     address.insert(address.end(), sha2_hash.begin(), sha2_hash.begin() + 4);
     return "0x" + bin2hex(address);
+}
+
+std::vector<char> Signer::sign(std::string_view data)
+{
+    std::vector<char> bin_sign;
+    sign_data(data, bin_sign, private_key);
+    return bin_sign;
+}
+
+const std::vector<char>& Signer::get_pub_key()
+{
+    return public_key;
+}
+
+const std::string& Signer::get_mh_addr()
+{
+    return mh_addr;
+}
+
+void Signer::init(std::string_view priv_key_sw)
+{
+    private_key.insert(private_key.end(), priv_key_sw.begin(), priv_key_sw.end());
+
+    if (!generate_public_key(public_key, private_key)) {
+        abort();
+    }
+
+    mh_addr = "0x" + bin2hex(get_address(public_key));
+}
+
 }
