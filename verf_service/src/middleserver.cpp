@@ -1,9 +1,8 @@
 #include "middleserver.h"
 
 #include <meta_log.hpp>
-#include <open_ssl_decor.h>
 #include <statics.hpp>
-#include <utility>
+#include <thread>
 
 MIDDLE_SERVER::MIDDLE_SERVER(int _port, std::function<std::string(const std::string&, const std::string&)> func)
     : processor(std::move(func))
@@ -31,36 +30,104 @@ bool MIDDLE_SERVER::init()
     return true;
 }
 
-bool KeyManager::parse(const std::string& line)
+std::vector<std::string> split(const std::string& s, char delim)
 {
+    std::stringstream ss(s);
+    std::string item;
+    std::vector<std::string> elems;
+    while (std::getline(ss, item, delim)) {
+        elems.push_back(item);
+    }
+    return elems;
+}
 
-    std::vector<unsigned char> priv_k = hex2bin(line);
-    PrivKey.insert(PrivKey.end(), priv_k.begin(), priv_k.end());
-    if (!generate_public_key(PubKey, PrivKey)) {
-        return false;
+std::set<std::tuple<std::string, std::string, int>> parse_core_list(const std::vector<char>& data)
+{
+    std::string in_string(data.data(), data.size());
+    std::set<std::tuple<std::string, std::string, int>> core_list;
+
+    auto records = split(in_string, '\n');
+    for (const auto& record : records) {
+        auto host_port = split(record, ':');
+        if (host_port.size() == 3) {
+            core_list.insert({ host_port[0], host_port[1], std::stoi(host_port[2]) });
+        }
     }
 
-    Text_PubKey = "0x" + bin2hex(PubKey);
-
-    std::array<char, 25> addres = get_address(PubKey);
-    Bin_addr.insert(Bin_addr.end(), addres.begin(), addres.end());
-
-    Text_addres = "0x" + bin2hex(Bin_addr);
-
-    return true;
+    return core_list;
 }
 
-std::string KeyManager::make_req_url(std::string& data)
+CoreConnector::CoreConnector(boost::asio::io_context& io_context, metahash::crypto::Signer& signer)
+    : io_context(io_context)
+    , signer(signer)
 {
-    std::vector<char> sign;
-    sign_data(data, sign, PrivKey);
-
-    return "/?pubk=" + Text_PubKey + "&sign=" + bin2hex(sign);
 }
 
-std::pair<std::string, std::string> KeyManager::sign_string(const std::string& data)
+void CoreConnector::init(const std::map<std::string, std::pair<std::string, int>>& core_list)
 {
-    std::vector<char> bin_sign;
-    sign_data(data, bin_sign, PrivKey);
-    return { "0x" + bin2hex(bin_sign), Text_PubKey };
+    for (auto&& [mh_addr, host_port_pair] : core_list) {
+        auto&& [host, port] = host_port_pair;
+        cores.emplace(mh_addr, new metahash::net_io::meta_client(io_context, mh_addr, host, port, concurrent_connections_count, signer));
+    }
+}
+
+void CoreConnector::sync_core_lists()
+{
+    bool got_new = true;
+    while (got_new) {
+        auto resp = send_with_return(RPC_GET_CORE_LIST, std::vector<char>());
+        got_new = false;
+
+        for (auto&& [mh_addr, data] : resp) {
+            auto hosts = parse_core_list(data);
+
+            add_new_cores(hosts);
+        }
+    }
+}
+
+void CoreConnector::add_new_cores(const std::set<std::tuple<std::string, std::string, int>>& hosts)
+{
+    std::lock_guard lock(core_lock);
+    for (auto&& [addr, host, port] : hosts) {
+        if (addr != signer.get_mh_addr()) {
+            if (cores.find(addr) == cores.end()) {
+                cores.emplace(addr, new metahash::net_io::meta_client(io_context, addr, host, port, concurrent_connections_count, signer));
+            }
+        }
+    }
+}
+
+void CoreConnector::send_no_return(uint64_t req_type, const std::vector<char>& req_data)
+{
+    std::lock_guard lock(core_lock);
+    for (auto&& [mh_addr, core] : cores) {
+        core->send_message(req_type, req_data, [](const std::vector<char>&) {});
+    }
+}
+
+std::map<std::string, std::vector<char>> CoreConnector::send_with_return(uint64_t req_type, const std::vector<char>& req_data)
+{
+    std::map<std::string, std::vector<char>> resp_strings;
+    std::map<std::string, std::future<std::vector<char>>> futures;
+
+    {
+        std::lock_guard lock(core_lock);
+        for (auto&& [mh_addr, core] : cores) {
+            auto promise = std::make_shared<std::promise<std::vector<char>>>();
+            futures.insert({ mh_addr, promise->get_future() });
+
+            core->send_message(req_type, req_data, [promise](const std::vector<char>& resp) {
+                promise->set_value(resp);
+            });
+        }
+    }
+
+    for (auto&& [mh_addr, future] : futures) {
+        auto data = future.get();
+
+        resp_strings[mh_addr] = data;
+    }
+
+    return resp_strings;
 }
