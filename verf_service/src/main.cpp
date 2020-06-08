@@ -47,7 +47,7 @@ int main(int argc, char** argv)
 {
     std::map<std::string, moodycamel::ConcurrentQueue<std::string*>> send_message_map;
 
-    DEBUG_COUT("Version:\t" + std::string(VESION_MAJOR) + "." + std::string(VESION_MINOR) + "." + std::string(GIT_COMMIT_HASH));
+    DEBUG_COUT("Version:\t" + std::string(VESION_MAJOR) + "." + std::string(VESION_MINOR) + "." + std::string(GIT_COUNT));
 
     int listen_port = 0;
     std::string network;
@@ -118,7 +118,7 @@ int main(int argc, char** argv)
         path.erase(std::remove(path.begin(), path.end(), '/'), path.end());
 
         if (path == "getinfo") {
-            static const std::string version = std::string(VESION_MAJOR) + "." + std::string(VESION_MINOR) + "." + std::string(GIT_COMMIT_HASH);
+            static const std::string version = std::string(VESION_MAJOR) + "." + std::string(VESION_MINOR) + "." + std::string(GIT_COUNT);
             rapidjson::StringBuffer s;
             rapidjson::Writer<rapidjson::StringBuffer> writer(s);
             writer.StartObject();
