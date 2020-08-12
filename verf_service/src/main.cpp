@@ -71,6 +71,12 @@ int main(int argc, char** argv)
                         && record["port"].GetUint() != 0) {
 
                         core_list.insert({ record["address"].GetString(), { record["host"].GetString(), record["port"].GetUint() } });
+                    } else {
+                        std::cerr << "Errors in configuration file" << std::endl;
+                        std::cerr << "Invalid cores" << std::endl;
+                        std::cerr << "Check:" << std::endl;
+                        std::cerr << "https://github.com/metahashorg/Node-Verificator/wiki/Build-and-Install" << std::endl;
+                        exit(1);
                     }
                 }
 
