@@ -65,12 +65,12 @@ int main(int argc, char** argv)
                 for (uint i = 0; i < v_list.Size(); i++) {
                     auto& record = v_list[i];
 
-                    if (record.HasMember("network") && record["network"].IsString()
+                    if (record.HasMember("address") && record["address"].IsString()
                         && record.HasMember("host") && record["host"].IsString()
                         && record.HasMember("port") && record["port"].IsUint()
                         && record["port"].GetUint() != 0) {
 
-                        core_list.insert({ record["network"].GetString(), { record["host"].GetString(), record["port"].GetUint() } });
+                        core_list.insert({ record["address"].GetString(), { record["host"].GetString(), record["port"].GetUint() } });
                     }
                 }
 
