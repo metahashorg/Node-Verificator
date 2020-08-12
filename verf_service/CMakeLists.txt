@@ -1,4 +1,4 @@
-project(verf_service VERSION 0.4 LANGUAGES CXX)
+project(verf_service VERSION 0.5 LANGUAGES CXX)
 
 ################################################################################
 # Get current working branch
