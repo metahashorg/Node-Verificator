@@ -85,7 +85,7 @@ int main(int argc, char** argv)
                 exit(1);
             }
         } else {
-            std::cerr << "Ivalid configuration file" << std::endl;
+            std::cerr << "Invalid configuration file" << std::endl;
             exit(1);
         }
     } else {
