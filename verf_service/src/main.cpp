@@ -1,15 +1,14 @@
+#include <fstream>
+#include <iostream>
 #include <set>
 #include <unordered_map>
 
-#include <fstream>
-#include <iostream>
-
+#include <meta_connections.hpp>
+#include <meta_constants.hpp>
+#include <meta_crypto.h>
 #include <meta_log.hpp>
-#include <open_ssl_decor.h>
-#include <statics.hpp>
-#include <transaction.h>
-
-#include "middleserver.h"
+#include <meta_pool.hpp>
+#include <meta_transaction.h>
 
 #include <rapidjson/document.h>
 #include <rapidjson/stringbuffer.h>
@@ -17,30 +16,15 @@
 
 #include <version.h>
 
-void get_cores(const boost::system::error_code&, boost::asio::deadline_timer& t, CoreConnector& cores)
+#include "middleserver.h"
+
+void get_cores(boost::asio::deadline_timer& t, metahash::connection::MetaConnection& cores)
 {
     cores.sync_core_lists();
     t.expires_at(t.expires_at() + boost::posix_time::minutes(5));
-    t.async_wait(boost::bind(get_cores, boost::asio::placeholders::error, std::ref(t), std::ref(cores)));
-}
-
-void SIGPIPE_handler(int /*s*/)
-{
-    DEBUG_COUT("Caught SIGPIPE");
-}
-
-[[noreturn]] void SIGSEGV_handler(int /*s*/)
-{
-    DEBUG_COUT("Caught SIGSEGV");
-    std::this_thread::sleep_for(std::chrono::seconds(2));
-    exit(1);
-}
-
-[[noreturn]] void SIGTERM_handler(int /*s*/)
-{
-    DEBUG_COUT("Caught SIGTERM");
-    std::this_thread::sleep_for(std::chrono::seconds(2));
-    exit(0);
+    t.async_wait([&t, &cores](const boost::system::error_code&){
+        get_cores(t, cores);
+    });
 }
 
 int main(int argc, char** argv)
@@ -111,7 +95,7 @@ int main(int argc, char** argv)
     }
     boost::asio::io_context io_context;
     metahash::crypto::Signer signer(metahash::crypto::hex2bin(hex_priv_key));
-    CoreConnector cores(io_context, signer);
+    metahash::connection::MetaConnection cores(io_context, "", listen_port, signer, true);
 
     MIDDLE_SERVER MS(listen_port, [&cores, &signer](const std::string& req_post, const std::string& req_url) {
         std::string path = req_url;
@@ -137,7 +121,7 @@ int main(int argc, char** argv)
             return std::string(s.GetString());
         } else {
             {
-                auto* p_tx = new metahash::metachain::TX();
+                auto* p_tx = new metahash::transaction::TX();
                 if (!p_tx->parse(req_post)) {
                     DEBUG_COUT("Transaction corrupted");
 
@@ -159,16 +143,19 @@ int main(int argc, char** argv)
                 cores.send_no_return(RPC_TX, data);
             }
 
+            DEBUG_COUT("Transaction accepted");
             return std::string("Transaction accepted.<BR/>");
         }
     });
 
-    auto&& [threads, work] = thread_pool(io_context, std::thread::hardware_concurrency());
-
-    boost::asio::deadline_timer t(io_context, boost::posix_time::minutes(5));
-    t.async_wait(boost::bind(get_cores, boost::asio::placeholders::error, std::ref(t), std::ref(cores)));
-
+    auto&& [threads, work] = metahash::pool::thread_pool(io_context, std::thread::hardware_concurrency());
     cores.init(core_list);
+
+    boost::asio::deadline_timer t(io_context, boost::posix_time::minutes(1));
+    io_context.post([&t, &cores]{
+        get_cores(t, cores);
+    });
+
     MS.start();
 
     return 0;

@@ -1,2 +1,6 @@
+add_subdirectory(curl_pp)
+add_subdirectory(mhd)
+add_subdirectory(microhttpd)
 add_subdirectory(moodycamel)
 add_subdirectory(rapidjson)
+add_subdirectory(xxhash)

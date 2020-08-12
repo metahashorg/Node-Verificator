@@ -4,11 +4,12 @@
 #include "MHD.h"
 
 #include <functional>
+#include <set>
 #include <thread>
 
 #include <meta_client.h>
-#include <open_ssl_decor.h>
-#include <thread_pool.hpp>
+#include <meta_crypto.h>
+#include <meta_pool.hpp>
 
 class MIDDLE_SERVER : public mh::mhd::MHD {
 private:
@@ -30,7 +31,7 @@ private:
     const uint64_t concurrent_connections_count = 4;
 
     std::mutex core_lock;
-    std::map<std::string, metahash::net_io::meta_client*> cores;
+    std::map<std::string, metahash::network::meta_client*> cores;
 
     boost::asio::io_context& io_context;
 

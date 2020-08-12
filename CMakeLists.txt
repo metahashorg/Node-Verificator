@@ -18,7 +18,7 @@ find_package (Threads)
 
 add_subdirectory(libs)
 add_subdirectory(metalibs)
-add_subdirectory(mhsupport)
+add_subdirectory(version)
 
 add_subdirectory(verf_service)
 

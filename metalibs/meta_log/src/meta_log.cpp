@@ -1,13 +1,10 @@
 #include <meta_log.hpp>
-
-#include <ctime>
 #include <date.h>
+
 #include <iomanip>
 #include <iostream>
 
-#include "date.h"
-
-namespace meta_log {
+namespace metahash::log {
 moodycamel::ConcurrentQueue<std::stringstream*>* output_queue = new moodycamel::ConcurrentQueue<std::stringstream*>();
 std::thread* cout_printer = new std::thread([]() {
     moodycamel::ConsumerToken ct(*output_queue);

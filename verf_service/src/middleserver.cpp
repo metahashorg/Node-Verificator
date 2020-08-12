@@ -1,7 +1,7 @@
 #include "middleserver.h"
 
 #include <meta_log.hpp>
-#include <statics.hpp>
+#include <meta_constants.hpp>
 #include <thread>
 
 MIDDLE_SERVER::MIDDLE_SERVER(int _port, std::function<std::string(const std::string&, const std::string&)> func)
@@ -67,23 +67,26 @@ void CoreConnector::init(const std::map<std::string, std::pair<std::string, int>
 {
     for (auto&& [mh_addr, host_port_pair] : core_list) {
         auto&& [host, port] = host_port_pair;
-        cores.emplace(mh_addr, new metahash::net_io::meta_client(io_context, mh_addr, host, port, concurrent_connections_count, signer));
+        cores.emplace(mh_addr, new metahash::network::meta_client(io_context, mh_addr, host, port, concurrent_connections_count, signer));
     }
 }
 
 void CoreConnector::sync_core_lists()
 {
-    bool got_new = true;
-    while (got_new) {
         auto resp = send_with_return(RPC_GET_CORE_LIST, std::vector<char>());
-        got_new = false;
 
         for (auto&& [mh_addr, data] : resp) {
+            {
+                std::string data_str;
+                data_str.insert(data_str.end(), data.begin(), data.end());
+                DEBUG_COUT(mh_addr);
+                DEBUG_COUT(data_str);
+            }
+
             auto hosts = parse_core_list(data);
 
             add_new_cores(hosts);
         }
-    }
 }
 
 void CoreConnector::add_new_cores(const std::set<std::tuple<std::string, std::string, int>>& hosts)
@@ -92,7 +95,7 @@ void CoreConnector::add_new_cores(const std::set<std::tuple<std::string, std::st
     for (auto&& [addr, host, port] : hosts) {
         if (addr != signer.get_mh_addr()) {
             if (cores.find(addr) == cores.end()) {
-                cores.emplace(addr, new metahash::net_io::meta_client(io_context, addr, host, port, concurrent_connections_count, signer));
+                cores.emplace(addr, new metahash::network::meta_client(io_context, addr, host, port, concurrent_connections_count, signer));
             }
         }
     }
