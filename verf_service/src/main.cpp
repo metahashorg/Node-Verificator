@@ -145,6 +145,7 @@ int main(int argc, char** argv)
 
             {
                 std::vector<char> data;
+                metahash::crypto::append_varint(data, req_post.size());
                 data.insert(data.end(), req_post.begin(), req_post.end());
                 cores.send_no_return(RPC_TX, data);
             }
