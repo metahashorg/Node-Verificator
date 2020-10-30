@@ -148,6 +148,7 @@ int main(int argc, char** argv)
                 metahash::crypto::append_varint(data, req_post.size());
                 data.insert(data.end(), req_post.begin(), req_post.end());
                 cores.send_no_return(RPC_TX, data);
+                metahash::crypto::append_varint(data, 0);
             }
 
             DEBUG_COUT("Transaction accepted");
