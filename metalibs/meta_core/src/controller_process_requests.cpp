@@ -1,17 +1,13 @@
 #include "controller.hpp"
 
-#include <meta_log.hpp>
 #include <meta_constants.hpp>
+#include <meta_log.hpp>
 
 #include <list>
 
 namespace metahash::meta_core {
 
-void ControllerImplementation::parse_S_PING(std::string_view)
-{
-}
-
-void ControllerImplementation::parse_B_TX(std::string_view pack)
+void ControllerImplementation::parse_RPC_TX(std::string_view pack)
 {
     auto* tx_list = new std::list<transaction::TX*>();
 
@@ -60,7 +56,7 @@ void ControllerImplementation::parse_B_TX(std::string_view pack)
     }
 }
 
-void ControllerImplementation::parse_C_PRETEND_BLOCK(std::string_view pack)
+void ControllerImplementation::parse_RPC_PRETEND_BLOCK(std::string_view pack)
 {
     std::string_view block_sw(pack);
     auto* block = block::parse_block(block_sw);
@@ -68,15 +64,9 @@ void ControllerImplementation::parse_C_PRETEND_BLOCK(std::string_view pack)
     if (block) {
         if (dynamic_cast<block::CommonBlock*>(block)) {
             serial_execution.post([this, block] {
-                if (blocks.find(block->get_prev_hash()) == blocks.end()) {
-                    serial_execution.post([this] {
-                        actualize_chain();
-                    });
-                }
+                missing_blocks.erase(block->get_block_hash());
 
-                if (!blocks.insert({ block->get_block_hash(), block }).second) {
-                    delete block;
-                }
+                blocks.insert(block);
             });
         } else if (dynamic_cast<block::RejectedTXBlock*>(block)) {
             serial_execution.post([this, block] {
@@ -88,7 +78,7 @@ void ControllerImplementation::parse_C_PRETEND_BLOCK(std::string_view pack)
     }
 }
 
-void ControllerImplementation::parse_C_APPROVE(std::string_view pack)
+void ControllerImplementation::parse_RPC_APPROVE(std::string_view pack)
 {
     std::string_view approve_sw(pack);
     auto* p_ar = new transaction::ApproveRecord;
@@ -103,7 +93,7 @@ void ControllerImplementation::parse_C_APPROVE(std::string_view pack)
     }
 }
 
-void ControllerImplementation::parse_C_DISAPPROVE(std::string_view pack)
+void ControllerImplementation::parse_RPC_DISAPPROVE(std::string_view pack)
 {
     std::string_view approve_sw(pack);
     auto* p_ar = new transaction::ApproveRecord;
@@ -118,55 +108,110 @@ void ControllerImplementation::parse_C_DISAPPROVE(std::string_view pack)
     }
 }
 
-std::vector<char> ControllerImplementation::parse_S_LAST_BLOCK(std::string_view)
+std::vector<char> ControllerImplementation::parse_RPC_GET_APPROVE(std::string_view pack)
+{
+    if (pack.size() < 32) {
+        DEBUG_COUT("pack.size() < 32");
+        return std::vector<char>();
+    }
+
+    sha256_2 approve_wanted_block;
+    std::copy_n(pack.begin(), 32, approve_wanted_block.begin());
+
+    std::shared_lock a_lock(block_approve_lock);
+    auto approve_list_it = block_approve.find(approve_wanted_block);
+    a_lock.unlock();
+
+    if (approve_list_it == block_approve.end()) {
+        sha256_2 got_block = last_applied_block;
+
+        while (got_block != approve_wanted_block && blocks.contains(got_block)) {
+            got_block = blocks[got_block]->get_prev_hash();
+        }
+
+        if (got_block == approve_wanted_block) {
+            auto* p_ar = new transaction::ApproveRecord;
+            p_ar->make(got_block, signer);
+            p_ar->approve = true;
+            std::unique_lock ulock(block_approve_lock);
+            if (!block_approve[got_block].insert({ signer.get_mh_addr(), p_ar }).second) {
+                //DEBUG_COUT("APPROVE ALREADY PRESENT NOT CREATED");
+                delete p_ar;
+            }
+            approve_list_it = block_approve.find(approve_wanted_block);
+            if (approve_list_it == block_approve.end()) {
+                return std::vector<char>();
+            }
+        } else {
+            return std::vector<char>();
+        }
+    }
+
+    std::vector<char> approve_data_list;
+    for (auto&& [core_addr, record] : approve_list_it->second) {
+        uint64_t record_size = record->data.size();
+        approve_data_list.insert(approve_data_list.end(), reinterpret_cast<char*>(&record_size), reinterpret_cast<char*>(&record_size) + sizeof(uint64_t));
+        approve_data_list.insert(approve_data_list.end(), record->data.begin(), record->data.end());
+    }
+    return approve_data_list;
+}
+
+std::vector<char> ControllerImplementation::parse_RPC_LAST_BLOCK(std::string_view)
 {
     std::vector<char> last_block;
-    last_block.insert(last_block.end(), last_applied_block.begin(), last_applied_block.end());
-    char* p_timestamp = reinterpret_cast<char*>(&prev_timestamp);
+    sha256_2 got_block;
+    uint64_t got_timestamp;
+
+    if (master()) {
+
+        if (blocks.contains(last_created_block)) {
+            got_block = last_created_block;
+            got_timestamp = blocks[last_created_block]->get_block_timestamp();
+        } else {
+            got_block = last_applied_block;
+            got_timestamp = prev_timestamp;
+        }
+    } else {
+        got_block = last_applied_block;
+        got_timestamp = prev_timestamp;
+    }
+
+    last_block.insert(last_block.end(), got_block.begin(), got_block.end());
+    char* p_timestamp = reinterpret_cast<char*>(&got_timestamp);
     last_block.insert(last_block.end(), p_timestamp, p_timestamp + 8);
 
     return last_block;
 }
 
-std::vector<char> ControllerImplementation::parse_S_GET_BLOCK(std::string_view pack)
+std::vector<char> ControllerImplementation::parse_RPC_GET_BLOCK(std::string_view pack)
 {
     if (pack.size() < 32) {
-        DEBUG_COUT("pack.size() < 32");
-        DEBUG_COUT(crypto::bin2hex(pack));
         return std::vector<char>();
     }
 
     sha256_2 block_hash;
     std::copy_n(pack.begin(), 32, block_hash.begin());
 
-    if (blocks.find(block_hash) != blocks.end()) {
+    if (blocks.contains(block_hash)) {
         return blocks[block_hash]->get_data();
-    } else {
-        DEBUG_COUT("blocks.find(block_hash) != blocks.end()");
-        DEBUG_COUT(crypto::bin2hex(block_hash));
     }
 
     return std::vector<char>();
 }
 
-std::vector<char> ControllerImplementation::parse_S_GET_CHAIN(std::string_view pack)
+std::vector<char> ControllerImplementation::parse_RPC_GET_CHAIN(std::string_view pack)
 {
-    sha256_2 prev_block = { { 0 } };
-    //    DEBUG_COUT(std::to_string(pack.size()));
-
     if (pack.size() < 32) {
         return std::vector<char>();
     }
 
+    sha256_2 prev_block;
     std::copy_n(pack.begin(), 32, prev_block.begin());
 
     std::vector<char> chain;
-    sha256_2 got_block = master() ? last_created_block : last_applied_block;
+    sha256_2 got_block = last_applied_block;
 
-    //    DEBUG_COUT(bin2hex(prev_block));
-    //    DEBUG_COUT(bin2hex(got_block));
-
-    while (got_block != prev_block && blocks.find(got_block) != blocks.end()) {
+    while (got_block != prev_block && blocks.contains(got_block)) {
         auto& block_data = blocks[got_block]->get_data();
 
         uint64_t block_size = block_data.size();
@@ -176,17 +221,54 @@ std::vector<char> ControllerImplementation::parse_S_GET_CHAIN(std::string_view p
         got_block = blocks[got_block]->get_prev_hash();
     }
 
+    if (master()) {
+        auto& block_data = blocks[last_created_block]->get_data();
+        uint64_t block_size = block_data.size();
+        chain.insert(chain.end(), reinterpret_cast<char*>(&block_size), reinterpret_cast<char*>(&block_size) + sizeof(uint64_t));
+        chain.insert(chain.end(), block_data.begin(), block_data.end());
+    }
+
     return chain;
 }
 
-std::vector<char> ControllerImplementation::parse_S_GET_CORE_LIST(std::string_view pack)
+std::vector<char> ControllerImplementation::parse_RPC_GET_MISSING_BLOCK_LIST(std::string_view pack)
+{
+    std::vector<char> chain;
+
+    if (pack.size() < 32) {
+        return chain;
+    }
+
+    sha256_2 prev_block;
+    std::copy_n(pack.begin(), 32, prev_block.begin());
+
+    sha256_2 got_block = last_applied_block;
+
+    while (got_block != prev_block && blocks.contains(got_block)) {
+        chain.insert(chain.end(), got_block.begin(), got_block.end());
+
+        got_block = blocks[got_block]->get_prev_hash();
+    }
+
+    if (blocks.contains(prev_block)) {
+        chain.insert(chain.end(), prev_block.begin(), prev_block.end());
+    }
+
+    if (master()) {
+        chain.insert(chain.end(), last_created_block.begin(), last_created_block.end());
+    }
+
+    return chain;
+}
+
+std::vector<char> ControllerImplementation::parse_RPC_GET_CORE_LIST(std::string_view pack)
 {
     cores.add_cores(pack);
 
     return cores.get_core_list();
 }
 
-void ControllerImplementation::parse_S_CORE_LIST_APPROVE(std::string core, std::string_view pack)
+void ControllerImplementation::parse_RPC_CORE_LIST_APPROVE(std::string core, std::string_view pack)
 {
     uint64_t current_timestamp = static_cast<uint64_t>(std::chrono::time_point_cast<std::chrono::seconds>(std::chrono::system_clock::now()).time_since_epoch().count());
     uint64_t current_generation = current_timestamp / CORE_LIST_RENEW_PERIOD;

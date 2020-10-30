@@ -9,6 +9,7 @@ namespace metahash::block {
 class Block {
 protected:
     std::vector<char> data;
+    bool from_local_storage = false;
 
 public:
     virtual ~Block() = default;
@@ -20,6 +21,9 @@ public:
     virtual sha256_2 get_block_hash();
 
     virtual bool parse(std::string_view block_sw) = 0;
+
+    virtual bool is_local();
+    virtual void set_local();
 };
 
 class CommonBlock : public Block {
@@ -34,7 +38,6 @@ public:
     const std::vector<transaction::TX> get_txs(boost::asio::io_context& io_context);
 
     bool parse(std::string_view block_sw) override;
-//    bool make(uint64_t timestamp, const sha256_2& new_prev_hash, const std::vector<transaction::TX*>&);
 };
 
 class ApproveBlock : public Block {

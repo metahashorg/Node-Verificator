@@ -6,8 +6,8 @@
 #include <string>
 #include <unordered_map>
 
-#include <meta_transaction.h>
 #include <meta_crypto.h>
+#include <meta_transaction.h>
 
 namespace metahash::meta_wallet {
 
@@ -23,8 +23,6 @@ public:
 
     auto begin() { return wallet_map.begin(); }
     auto end() { return wallet_map.end(); }
-
-    bool empty() { return wallet_map.empty(); }
 
     void apply_changes();
     void clear_changes();

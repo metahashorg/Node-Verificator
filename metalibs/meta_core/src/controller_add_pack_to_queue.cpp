@@ -1,69 +1,109 @@
 #include "controller.hpp"
-//#include <meta_log.hpp>
+
 #include <meta_constants.hpp>
+#include <meta_log.hpp>
 
 namespace metahash::meta_core {
 
 std::vector<char> ControllerImplementation::add_pack_to_queue(network::Request& request)
 {
-    auto roles = BC->check_addr(request.sender_mh_addr);
-    auto url = request.request_type;
-    auto pack = request.message;
+    const auto& sender_addr = request.sender_mh_addr;
+    auto roles = BC.check_addr(sender_addr);
+    const auto url = request.request_type;
+    const auto pack = request.message;
+
+    switch (url) {
+    case RPC_APPROVE:
+        stat.dbg_RPC_APPROVE++;
+        parse_RPC_APPROVE(pack);
+        return std::vector<char>();
+    case RPC_DISAPPROVE:
+        stat.dbg_RPC_DISAPPROVE++;
+        parse_RPC_DISAPPROVE(pack);
+        return std::vector<char>();
+    case RPC_GET_APPROVE:
+        stat.dbg_RPC_GET_APPROVE++;
+        return parse_RPC_GET_APPROVE(pack);
+    case RPC_LAST_BLOCK:
+        stat.dbg_RPC_LAST_BLOCK++;
+        return parse_RPC_LAST_BLOCK(pack);
+    case RPC_GET_BLOCK:
+        stat.dbg_RPC_GET_BLOCK++;
+        return parse_RPC_GET_BLOCK(pack);
+    case RPC_GET_CHAIN:
+        stat.dbg_RPC_GET_CHAIN++;
+        return parse_RPC_GET_CHAIN(pack);
+    case RPC_GET_MISSING_BLOCK_LIST:
+        stat.dbg_RPC_GET_MISSING_BLOCK_LIST++;
+        return parse_RPC_GET_MISSING_BLOCK_LIST(pack);
+    case RPC_GET_CORE_LIST:
+        stat.dbg_RPC_GET_CORE_LIST++;
+        return parse_RPC_GET_CORE_LIST(pack);
+    }
 
     if (roles.count(META_ROLE_VERIF)) {
-        switch (url) {
-        case RPC_PING:
-            parse_S_PING(pack);
+        if (url == RPC_TX) {
+            stat.dbg_RPC_TX++;
+            parse_RPC_TX(pack);
             return std::vector<char>();
-        case RPC_TX:
-            parse_B_TX(pack);
-            return std::vector<char>();
-        case RPC_GET_CORE_LIST:
-            return parse_S_GET_CORE_LIST(pack);
         }
     }
 
     if (roles.count(META_ROLE_CORE)) {
-        switch (url) {
-        case RPC_APPROVE:
-            parse_C_APPROVE(pack);
-            return std::vector<char>();
-        case RPC_DISAPPROVE:
-            parse_C_DISAPPROVE(pack);
-            return std::vector<char>();
-        case RPC_LAST_BLOCK:
-            return parse_S_LAST_BLOCK(pack);
-        case RPC_GET_BLOCK:
-            return parse_S_GET_BLOCK(pack);
-        case RPC_GET_CHAIN:
-            return parse_S_GET_CHAIN(pack);
-        case RPC_GET_CORE_LIST:
-            return parse_S_GET_CORE_LIST(pack);
-        case RPC_CORE_LIST_APPROVE:
-            parse_S_CORE_LIST_APPROVE(request.sender_mh_addr, pack);
+        if (url == RPC_CORE_LIST_APPROVE) {
+            stat.dbg_RPC_CORE_LIST_APPROVE++;
+            parse_RPC_CORE_LIST_APPROVE(request.sender_mh_addr, pack);
             return std::vector<char>();
         }
     }
 
-    if (request.sender_mh_addr == current_cores[0]) {
+    if (!current_cores.empty() && request.sender_mh_addr == current_cores[0]) {
         if (url == RPC_PRETEND_BLOCK) {
-            parse_C_PRETEND_BLOCK(pack);
+            stat.dbg_RPC_PRETEND_BLOCK++;
+            parse_RPC_PRETEND_BLOCK(pack);
             return std::vector<char>();
         }
     }
 
-    /*{
-        DEBUG_COUT(request.request_id);
-        DEBUG_COUT(crypto::int2hex(request.request_type));
-        DEBUG_COUT(request.sender_mh_addr);
-        DEBUG_COUT(request.remote_ip_address);
-        DEBUG_COUT(request.message.size());
-        for (const auto& role : roles) {
-            DEBUG_COUT(role);
-        }
-    }*/
+    stat.dbg_RPC_NONE++;
 
     return std::vector<char>();
+}
+
+void ControllerImplementation::log_network_statistics(uint64_t timestamp)
+{
+    /// DEBUG INFO BEGIN
+    if (timestamp > stat.dbg_timestamp + 60) {
+        DEBUG_COUT("TX\tGetCL\tAPPROVE\tDisAprv\tGetAprv\tLastBlo\tGetBlok\tGetChai\tGetBLst\tCoreLst\tPRETEND\tNone");
+        DEBUG_COUT(std::to_string(stat.dbg_RPC_TX) + "\t"
+            + std::to_string(stat.dbg_RPC_GET_CORE_LIST) + "\t"
+            + std::to_string(stat.dbg_RPC_APPROVE) + "\t"
+            + std::to_string(stat.dbg_RPC_DISAPPROVE) + "\t"
+            + std::to_string(stat.dbg_RPC_GET_APPROVE) + "\t"
+            + std::to_string(stat.dbg_RPC_LAST_BLOCK) + "\t"
+            + std::to_string(stat.dbg_RPC_GET_BLOCK) + "\t"
+            + std::to_string(stat.dbg_RPC_GET_CHAIN) + "\t"
+            + std::to_string(stat.dbg_RPC_GET_MISSING_BLOCK_LIST) + "\t"
+            + std::to_string(stat.dbg_RPC_CORE_LIST_APPROVE) + "\t"
+            + std::to_string(stat.dbg_RPC_PRETEND_BLOCK) + "\t"
+            + std::to_string(stat.dbg_RPC_NONE));
+
+        stat.dbg_RPC_TX = 0;
+        stat.dbg_RPC_GET_CORE_LIST = 0;
+        stat.dbg_RPC_APPROVE = 0;
+        stat.dbg_RPC_DISAPPROVE = 0;
+        stat.dbg_RPC_GET_APPROVE = 0;
+        stat.dbg_RPC_LAST_BLOCK = 0;
+        stat.dbg_RPC_GET_BLOCK = 0;
+        stat.dbg_RPC_GET_CHAIN = 0;
+        stat.dbg_RPC_GET_MISSING_BLOCK_LIST = 0;
+        stat.dbg_RPC_CORE_LIST_APPROVE = 0;
+        stat.dbg_RPC_PRETEND_BLOCK = 0;
+        stat.dbg_RPC_NONE = 0;
+
+        stat.dbg_timestamp = timestamp;
+    }
+    /// DEBUG INFO END
 }
 
 }

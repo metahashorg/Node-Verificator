@@ -10,6 +10,10 @@ namespace metahash::meta_core {
 
 void ControllerImplementation::write_block(block::Block* block)
 {
+    if (block->is_local()) {
+        return;
+    }
+
     auto theTime = static_cast<time_t>(block->get_block_timestamp());
     struct tm* aTime = localtime(&theTime);
 
@@ -28,13 +32,6 @@ void ControllerImplementation::write_block(block::Block* block)
 
     if (dynamic_cast<block::CommonBlock*>(block)) {
         DEBUG_COUT("CommonBlock");
-
-        prev_timestamp = block->get_block_timestamp();
-        last_applied_block = block->get_block_hash();
-        last_created_block = block->get_block_hash();
-
-        prev_day = prev_timestamp / DAY_IN_SECONDS;
-        prev_state = block->get_block_type();
 
         uint64_t block_size = block->get_data().size() /* + approve_buff.size()*/;
 

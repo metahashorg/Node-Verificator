@@ -9,67 +9,95 @@ void ControllerImplementation::main_loop()
     uint64_t timestamp = static_cast<uint64_t>(std::chrono::time_point_cast<std::chrono::seconds>(std::chrono::system_clock::now()).time_since_epoch().count());
     bool no_sleep = false;
 
-    if (timestamp - last_sync_timestamp > 60) {
-        DEBUG_COUT("sync_core_lists");
-        io_context.post([this] { cores.sync_core_lists(); });
+    log_network_statistics(timestamp);
 
+    if (timestamp - last_sync_timestamp > 60) {
+        io_context.post(std::bind(&connection::MetaConnection::sync_core_lists, &cores));
         last_sync_timestamp = timestamp;
     }
 
-    if (check_online_nodes()) {
-        {
-            if (prev_timestamp > last_actualization_timestamp) {
-                last_actualization_timestamp = prev_timestamp;
-            }
+    if (timestamp > last_actualization_check_timestamp || prev_timestamp > last_actualization_check_timestamp) {
+        last_actualization_check_timestamp = timestamp;
+        check_if_chain_actual();
+    }
 
-            uint64_t sync_interval = master() ? 60 : 1;
+    if (timestamp - last_actualization_timestamp > 5) {
+        last_actualization_timestamp = timestamp;
+        serial_execution.post(std::bind(&ControllerImplementation::actualize_chain, this));
+    }
 
-            if (timestamp - last_actualization_timestamp > sync_interval) {
-                last_actualization_timestamp = timestamp;
-                io_context.post([this] {
-                    check_if_chain_actual();
-                });
+    no_sleep = check_awaited_blocks();
 
-                no_sleep = true;
-            }
-        }
-
-        for (auto&& [hash, block] : blocks) {
-            if (!block_approve[hash].count(signer.get_mh_addr()) && !block_disapprove[hash].count(signer.get_mh_addr())) {
-                if (block->get_prev_hash() == last_applied_block) {
-                    if (BC->can_apply_block(block)) {
-                        approve_block(block);
-                    } else {
-                        disapprove_block(block);
-                    }
-
-                    no_sleep = true;
-                }
-            }
-        }
-
-        if (master() && try_make_block()) {
-            no_sleep = true;
-        }
-    } else {
-        if (timestamp - last_actualization_timestamp > 60) {
-            last_actualization_timestamp = timestamp;
-            actualize_chain();
-        }
+    if (check_if_can_make_block(timestamp)) {
+        no_sleep = try_make_block(timestamp);
     }
 
     if (no_sleep) {
-        serial_execution.post([this] {
+        serial_execution.post(std::bind(&ControllerImplementation::main_loop, this));
+    } else {
+        main_loop_timer = boost::asio::deadline_timer(serial_execution, boost::posix_time::milliseconds(10));
+        main_loop_timer.async_wait([this](const boost::system::error_code&) {
             main_loop();
         });
-    } else {
-        main_loop_timer = boost::asio::deadline_timer(io_context, boost::posix_time::milliseconds(1));
-        main_loop_timer.async_wait([this](const boost::system::error_code&) {
-            serial_execution.post([this] {
-                main_loop();
-            });
-        });
     }
+}
+
+bool ControllerImplementation::check_if_can_make_block(const uint64_t& timestamp)
+{
+    if (not_actualized[0] || not_actualized[1]) {
+        return false;
+    }
+    if (!check_online_nodes(timestamp)) {
+        return false;
+
+    }
+    if (!master()) {
+        return false;
+    }
+    return true;
+}
+
+bool ControllerImplementation::check_awaited_blocks()
+{
+    static const sha256_2 zero_block = { { 0 } };
+
+    if (last_applied_block != zero_block) {
+        if (blocks.contains_next(last_applied_block)) {
+            auto* block = blocks.get_next(last_applied_block);
+            if (check_block_for_appliance_and_break_on_corrupt_block(block)) {
+                return true;
+            }
+        }
+    } else {
+        if (proved_block != zero_block) {
+            if (blocks.contains(proved_block)) {
+                auto* curr_block = blocks[proved_block];
+                auto prev_hash = curr_block->get_prev_hash();
+
+                while (curr_block->get_block_type() != BLOCK_TYPE_STATE && prev_hash != zero_block) {
+                    if (blocks.contains(prev_hash)) {
+                        curr_block = blocks[prev_hash];
+                        prev_hash = curr_block->get_prev_hash();
+                    } else {
+                        missing_blocks[prev_hash];
+                        serial_execution.post(std::bind(&ControllerImplementation::actualize_chain, this));
+                        return false;
+                    }
+                }
+
+                if (check_block_for_appliance_and_break_on_corrupt_block(curr_block)) {
+                    return true;
+                }
+            }
+        } else if (blocks.contains_next(proved_block)) {
+            auto* block = blocks.get_next(last_applied_block);
+            if (check_block_for_appliance_and_break_on_corrupt_block(block)) {
+                return true;
+            }
+        }
+    }
+
+    return false;
 }
 
 }

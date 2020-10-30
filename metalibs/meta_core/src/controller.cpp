@@ -1,6 +1,6 @@
-#include <meta_log.hpp>
-#include <meta_constants.hpp>
 #include "controller.hpp"
+#include <meta_constants.hpp>
+#include <meta_log.hpp>
 
 namespace metahash::meta_core {
 
@@ -11,7 +11,7 @@ void ControllerImplementation::approve_block(block::Block* p_block)
     p_ar->approve = true;
 
     distribute(p_ar);
-    apply_approve(p_ar);
+    return apply_approve(p_ar);
 }
 
 void ControllerImplementation::disapprove_block(block::Block* p_block)
@@ -31,30 +31,10 @@ void ControllerImplementation::apply_approve(transaction::ApproveRecord* p_ar)
 
     std::string addr = "0x" + crypto::bin2hex(crypto::get_address(p_ar->pub_key));
 
+    std::unique_lock lock(block_approve_lock);
     if (p_ar->approve) {
         if (!block_approve[block_hash].insert({ addr, p_ar }).second) {
-            DEBUG_COUT("APPROVE ALREADY PRESENT NOT CREATED");
             delete p_ar;
-        }
-
-        uint64_t approve_size = 0;
-        for (auto&& [addr, _] : block_approve[block_hash]) {
-            if (std::find(current_cores.begin(), current_cores.end(), addr) != std::end(current_cores)) {
-                approve_size++;
-            }
-        }
-
-        if (approve_size >= min_approve) {
-            if (blocks.count(block_hash)) {
-                auto* block = blocks[block_hash];
-                if (block->get_prev_hash() == last_applied_block) {
-                    try_apply_block(block);
-                } else {
-                    DEBUG_COUT("block->get_prev_hash != last_applied_block");
-                }
-            } else {
-                DEBUG_COUT("!blocks.contains(block_hash)");
-            }
         }
     } else {
         if (!block_disapprove[block_hash].insert({ addr, p_ar }).second) {
@@ -63,23 +43,56 @@ void ControllerImplementation::apply_approve(transaction::ApproveRecord* p_ar)
     }
 }
 
-void ControllerImplementation::try_apply_block(block::Block* block)
+bool ControllerImplementation::count_approve_for_block(block::Block* block)
 {
-    if (BC->apply_block(block)) {
-        write_block(block);
+    auto block_hash = block->get_block_hash();
 
-        if (block->get_block_type() == BLOCK_TYPE_STATE) {
-            std::unordered_set<std::string, crypto::Hasher> allowed_addresses;
-            for (auto&& [addr, roles] : BC->get_node_state()) {
-                if (roles.count(META_ROLE_CORE) || roles.count(META_ROLE_VERIF)) {
-                    allowed_addresses.insert(addr);
-                }
-            }
-            listener->update_allowed_addreses(allowed_addresses);
+    uint64_t approve_size = 0;
+    for (auto&& [addr, _] : block_approve[block_hash]) {
+        if (std::find(current_cores.begin(), current_cores.end(), addr) != std::end(current_cores)) {
+            approve_size++;
         }
-    } else {
-        DEBUG_COUT("!BC->can_apply_block(block)");
     }
+
+    if (approve_size >= min_approve || approve_size == current_cores.size() || block->is_local()) {
+        return try_apply_block(block);
+    }
+
+    get_approve_for_block(block_hash);
+    return false;
+}
+
+bool ControllerImplementation::try_apply_block(block::Block* block, bool write)
+{
+    if (BC.apply_block(block)) {
+        {
+            prev_timestamp = block->get_block_timestamp();
+            last_applied_block = block->get_block_hash();
+            last_created_block = block->get_block_hash();
+
+            prev_day = prev_timestamp / DAY_IN_SECONDS;
+            prev_state = block->get_block_type();
+        }
+
+        if (write) {
+            write_block(block);
+
+            if (block->get_block_type() == BLOCK_TYPE_STATE) {
+                std::unordered_set<std::string, crypto::Hasher> allowed_addresses;
+                for (auto&& [addr, roles] : BC.get_node_state()) {
+                    if (roles.count(META_ROLE_CORE) || roles.count(META_ROLE_VERIF)) {
+                        allowed_addresses.insert(addr);
+                    }
+                }
+
+                listener.update_allowed_addreses(allowed_addresses);
+            }
+        }
+
+        return true;
+    }
+
+    return false;
 }
 
 void ControllerImplementation::distribute(block::Block* block)
@@ -101,8 +114,30 @@ void ControllerImplementation::distribute(transaction::ApproveRecord* p_ar)
 
 bool ControllerImplementation::master()
 {
-    if (current_cores[0] == signer.get_mh_addr()) {
+    if (!current_cores.empty() && current_cores[0] == signer.get_mh_addr()) {
         return true;
+    }
+
+    return false;
+}
+
+bool ControllerImplementation::check_block_for_appliance_and_break_on_corrupt_block(block::Block*& block)
+{
+    sha256_2 hash = block->get_block_hash();
+    if (!block_approve[hash].count(signer.get_mh_addr()) && !block_disapprove[hash].count(signer.get_mh_addr())) {
+        if (BC.can_apply_block(block)) {
+            approve_block(block);
+
+            return count_approve_for_block(block);
+        } else {
+            disapprove_block(block);
+
+            blocks.erase(hash);
+
+            return true;
+        }
+    } else {
+        return count_approve_for_block(block);
     }
 
     return false;
