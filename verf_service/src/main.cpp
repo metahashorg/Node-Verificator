@@ -16,13 +16,13 @@
 
 #include <version.h>
 
-#include "middleserver.h"
+#include <http_server.hpp>
 
 void get_cores(boost::asio::deadline_timer& t, metahash::connection::MetaConnection& cores)
 {
     cores.sync_core_lists();
     t.expires_at(t.expires_at() + boost::posix_time::minutes(5));
-    t.async_wait([&t, &cores](const boost::system::error_code&){
+    t.async_wait([&t, &cores](const boost::system::error_code&) {
         get_cores(t, cores);
     });
 }
@@ -103,7 +103,7 @@ int main(int argc, char** argv)
     metahash::crypto::Signer signer(metahash::crypto::hex2bin(hex_priv_key));
     metahash::connection::MetaConnection cores(io_context, "", listen_port, signer, true);
 
-    MIDDLE_SERVER MS(listen_port, [&cores, &signer](const std::string& req_post, const std::string& req_url) {
+    http::server::http_server(io_context, listen_port, [&cores, &signer](const std::string& req_post, const std::string& req_url) {
         std::string path = req_url;
         path.erase(std::remove(path.begin(), path.end(), '/'), path.end());
 
@@ -142,7 +142,6 @@ int main(int argc, char** argv)
                 delete p_tx;
             }
 
-
             {
                 std::vector<char> data;
                 metahash::crypto::append_varint(data, req_post.size());
@@ -157,15 +156,20 @@ int main(int argc, char** argv)
         }
     });
 
-    auto&& [threads, work] = metahash::pool::thread_pool(io_context, std::thread::hardware_concurrency());
+    auto thread_count = std::thread::hardware_concurrency() - 1;
+    auto&& [threads, work] = metahash::pool::thread_pool(io_context, thread_count);
     cores.init(core_list);
 
     boost::asio::deadline_timer t(io_context, boost::posix_time::minutes(1));
-    io_context.post([&t, &cores]{
+    io_context.post([&t, &cores] {
         get_cores(t, cores);
     });
 
-    MS.start();
+    io_context.run();
+
+    for (auto& t : threads) {
+        t.join();
+    }
 
     return 0;
 }
