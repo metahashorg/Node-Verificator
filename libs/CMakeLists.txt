@@ -1,6 +1,4 @@
 add_subdirectory(curl_pp)
-add_subdirectory(mhd)
-add_subdirectory(microhttpd)
 add_subdirectory(http_server)
 add_subdirectory(moodycamel)
 add_subdirectory(rapidjson)

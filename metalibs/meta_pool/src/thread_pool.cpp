@@ -6,7 +6,7 @@ namespace metahash::pool {
 
 std::tuple<std::vector<std::thread>, boost::asio::io_context::work> thread_pool(boost::asio::io_context& io_context, uint64_t thread_count)
 {
-    std::vector<std::thread> threadpool;
+    std::vector<std::thread> threadpool(thread_count);
     boost::asio::io_context::work work(io_context);
 
     for (uint i = 0; i < thread_count; i++) {

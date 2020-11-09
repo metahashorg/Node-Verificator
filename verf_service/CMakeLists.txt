@@ -46,7 +46,6 @@ include_directories(${PROJECT_BINARY_DIR}/generated)
 
 add_executable(${PROJECT_NAME}
         src/main.cpp
-        src/middleserver.cpp
         )
 
 target_link_libraries(${PROJECT_NAME} ${CMAKE_THREAD_LIBS_INIT})
@@ -57,7 +56,6 @@ target_link_libraries(${PROJECT_NAME} meta_connections)
 target_link_libraries(${PROJECT_NAME} meta_pool)
 target_link_libraries(${PROJECT_NAME} meta_network)
 target_link_libraries(${PROJECT_NAME} meta_connections)
-target_link_libraries(${PROJECT_NAME} mh_mhd)
 target_link_libraries(${PROJECT_NAME} http_server)
 target_link_libraries(${PROJECT_NAME} moodycamel)
 target_link_libraries(${PROJECT_NAME} rapidjson)
