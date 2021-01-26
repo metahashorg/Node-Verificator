@@ -1,5 +1,4 @@
 #include <fstream>
-#include <iostream>
 #include <set>
 #include <unordered_map>
 
@@ -52,8 +51,11 @@ int main(int argc, char** argv)
 
                 listen_port = config_json["port"].GetInt();
                 if (listen_port == 0) {
-                    std::cerr << "Errors in configuration file" << std::endl;
-                    std::cerr << "Invalid port" << std::endl;
+                    DEBUG_COUT("Errors in configuration file");
+                    DEBUG_COUT("Invalid port");
+                    DEBUG_COUT("Check:");
+                    DEBUG_COUT("https://github.com/metahashorg/Node-Verificator/wiki/Build-and-Install");
+                    std::this_thread::sleep_for(std::chrono::seconds(2));
                     exit(1);
                 }
 
@@ -72,33 +74,47 @@ int main(int argc, char** argv)
 
                         core_list.insert({ record["address"].GetString(), { record["host"].GetString(), record["port"].GetUint() } });
                     } else {
-                        std::cerr << "Errors in configuration file" << std::endl;
-                        std::cerr << "Invalid cores" << std::endl;
-                        std::cerr << "Check:" << std::endl;
-                        std::cerr << "https://github.com/metahashorg/Node-Verificator/wiki/Build-and-Install" << std::endl;
+                        DEBUG_COUT("Errors in configuration file");
+                        DEBUG_COUT("Invalid cores");
+                        DEBUG_COUT("Check:");
+                        DEBUG_COUT("https://github.com/metahashorg/Node-Verificator/wiki/Build-and-Install");
+                        std::this_thread::sleep_for(std::chrono::seconds(2));
                         exit(1);
                     }
                 }
 
                 if (core_list.empty()) {
-                    std::cerr << "Errors in configuration file" << std::endl;
-                    std::cerr << "Missing or invalid parameters" << std::endl;
+                    DEBUG_COUT("Errors in configuration file");
+                    DEBUG_COUT("Missing or invalid parameters");
+                    DEBUG_COUT("Check:");
+                    DEBUG_COUT("https://github.com/metahashorg/Node-Verificator/wiki/Build-and-Install");
+                    std::this_thread::sleep_for(std::chrono::seconds(2));
                     exit(1);
                 }
             } else {
-                std::cerr << "Errors in configuration file" << std::endl;
-                std::cerr << "Missing or invalid parameters" << std::endl;
+                DEBUG_COUT("Errors in configuration file");
+                DEBUG_COUT("Missing or invalid parameters");
+                DEBUG_COUT("Check:");
+                DEBUG_COUT("https://github.com/metahashorg/Node-Verificator/wiki/Build-and-Install");
+                std::this_thread::sleep_for(std::chrono::seconds(2));
                 exit(1);
             }
         } else {
-            std::cerr << "Invalid configuration file" << std::endl;
+            DEBUG_COUT("Invalid configuration file");
+            DEBUG_COUT("Check:");
+            DEBUG_COUT("https://github.com/metahashorg/Node-Verificator/wiki/Build-and-Install");
+            std::this_thread::sleep_for(std::chrono::seconds(2));
             exit(1);
         }
     } else {
-        std::cerr << "Usage:" << std::endl;
-        std::cerr << "app [config file]" << std::endl;
+        DEBUG_COUT("Usage:");
+        DEBUG_COUT("app [config file]");
+        DEBUG_COUT("Check:");
+        DEBUG_COUT("https://github.com/metahashorg/Node-Verificator/wiki/Build-and-Install");
+        std::this_thread::sleep_for(std::chrono::seconds(2));
         exit(1);
     }
+
     boost::asio::io_context io_context;
     metahash::crypto::Signer signer(metahash::crypto::hex2bin(hex_priv_key));
     metahash::connection::MetaConnection cores(io_context, "", listen_port, signer, true);
