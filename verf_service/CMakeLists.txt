@@ -59,3 +59,5 @@ target_link_libraries(${PROJECT_NAME} meta_connections)
 target_link_libraries(${PROJECT_NAME} http_server)
 target_link_libraries(${PROJECT_NAME} moodycamel)
 target_link_libraries(${PROJECT_NAME} rapidjson)
+target_link_libraries(${PROJECT_NAME} tcmalloc)
+
